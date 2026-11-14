@@ -3,7 +3,7 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'DOCKERHUB_ID', defaultValue: 'legeni07', description: 'Votre identifiant Docker Hub')
+        string(name: 'DOCKERHUB_ID', defaultValue: 'uwayezuines', description: 'Votre identifiant Docker Hub')
         booleanParam(name: 'PUSH', defaultValue: true, description: "Pousser l'image sur Docker Hub")
     }
 
