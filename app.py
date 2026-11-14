@@ -1,3 +1,4 @@
+
 """Application fil rouge du cours DevOps B3.
 
 Petite application Flask utilisée dans tous les TPs (Docker, Jenkins,
@@ -120,8 +121,8 @@ def create_app(counter=None):
 
     @app.route("/health")
     def health():
-        # Liveness : le processus répond.
-        return jsonify(status="ok")
+        # ÉCHEC VOLONTAIRE POUR LE TP : le service renvoie une erreur HTTP 503.
+        return jsonify(status="ko"), 503
 
     @app.route("/ready")
     def ready():
