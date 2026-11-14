@@ -3,15 +3,22 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'DOCKERHUB_ID', defaultValue: 'uwayezuines', description: 'Votre identifiant Docker Hub')
-        booleanParam(name: 'PUSH', defaultValue: true, description: "Pousser l'image sur Docker Hub")
+        string(
+            name: 'DOCKERHUB_ID',
+            defaultValue: 'uwayezuines',
+            description: 'Votre identifiant Docker Hub'
+        )
+        booleanParam(
+            name: 'PUSH',
+            defaultValue: true,
+            description: "Pousser l'image sur Docker Hub"
+        )
     }
 
     environment {
-        IMAGE          = "${params.DOCKERHUB_ID}/legeni-webapp"
-        VERSION        = "${env.BRANCH_NAME == 'main' ? '1.0.' + env.BUILD_NUMBER : env.BRANCH_NAME.replaceAll('[^a-zA-Z0-9.-]', '-') + '-' + env.BUILD_NUMBER}"
-        TEST_CONTAINER = "webapp-ci-${env.BUILD_NUMBER}"
-        CI_NETWORK     = "ci-net-${env.BUILD_NUMBER}"
+        IMAGE = "${params.DOCKERHUB_ID}/legeni-webapp"
+        TEST_CONTAINER = "webapp-ci-${BUILD_NUMBER}"
+        CI_NETWORK = "ci-net-${BUILD_NUMBER}"
     }
 
     options {
@@ -21,6 +28,20 @@ pipeline {
     }
 
     stages {
+        stage('Initialisation') {
+            steps {
+                script {
+                    if (env.BRANCH_NAME == 'main') {
+                        env.VERSION = "1.0.${env.BUILD_NUMBER}"
+                    } else {
+                        env.VERSION = "${env.BRANCH_NAME.replaceAll('[^a-zA-Z0-9.-]', '-')}-${env.BUILD_NUMBER}"
+                    }
+
+                    echo "Version à construire : ${env.VERSION}"
+                }
+            }
+        }
+
         stage('Tests unitaires') {
             steps {
                 sh 'docker build --target test -t legeni-webapp:test .'
@@ -29,7 +50,18 @@ pipeline {
 
         stage('Build image') {
             steps {
-                sh 'docker build --build-arg APP_VERSION=$VERSION -t $IMAGE:$VERSION -t $IMAGE:latest .'
+                sh '''
+                    docker build \
+                        --build-arg APP_VERSION=$VERSION \
+                        -t $IMAGE:$VERSION \
+                        .
+                '''
+
+                script {
+                    if (env.BRANCH_NAME == 'main') {
+                        sh 'docker tag $IMAGE:$VERSION $IMAGE:latest'
+                    }
+                }
             }
         }
 
@@ -37,13 +69,19 @@ pipeline {
             steps {
                 sh '''
                     docker network create $CI_NETWORK
-                    docker run -d --name $TEST_CONTAINER --network $CI_NETWORK $IMAGE:$VERSION
+
+                    docker run -d \
+                        --name $TEST_CONTAINER \
+                        --network $CI_NETWORK \
+                        $IMAGE:$VERSION
 
                     docker run --rm --network $CI_NETWORK curlimages/curl:8.11.1 \
-                        -sf --retry 10 --retry-connrefused --retry-delay 1 http://$TEST_CONTAINER:5000/health
+                        -sf --retry 10 --retry-connrefused --retry-delay 1 \
+                        http://$TEST_CONTAINER:5000/health
 
                     docker run --rm --network $CI_NETWORK curlimages/curl:8.11.1 \
-                        -sf http://$TEST_CONTAINER:5000/ | grep -q "Version $VERSION"
+                        -sf http://$TEST_CONTAINER:5000/ \
+                        | grep -q "Version $VERSION"
                 '''
             }
         }
@@ -54,11 +92,17 @@ pipeline {
                 expression { params.PUSH }
             }
             steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub',
-                                                  usernameVariable: 'DH_USER',
-                                                  passwordVariable: 'DH_TOKEN')]) {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub',
+                        usernameVariable: 'DH_USER',
+                        passwordVariable: 'DH_TOKEN'
+                    )
+                ]) {
                     sh '''
-                        echo "$DH_TOKEN" | docker login -u "$DH_USER" --password-stdin
+                        echo "$DH_TOKEN" | docker login \
+                            -u "$DH_USER" --password-stdin
+
                         docker push $IMAGE:$VERSION
                         docker push $IMAGE:latest
                     '''
@@ -69,11 +113,18 @@ pipeline {
 
     post {
         always {
-            sh 'docker rm -f $TEST_CONTAINER || true; docker network rm $CI_NETWORK || true'
+            script {
+                sh '''
+                    docker rm -f $TEST_CONTAINER || true
+                    docker network rm $CI_NETWORK || true
+                '''
+            }
         }
+
         success {
             echo "Image ${IMAGE}:${VERSION} construite et validée"
         }
+
         failure {
             echo "Échec du pipeline : consultez la console de l'étape en rouge"
         }
